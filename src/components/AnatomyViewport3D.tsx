@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
@@ -150,6 +151,10 @@ export const AnatomyViewport3D: React.FC<Props> = ({
   const lastZoomTierRef = useRef<'L1_MACRO' | 'L2_MESO' | 'L3_MICRO'>(
     'L1_MACRO'
   );
+  // Default true: lock 3D canvas against accidental node taps while rotating
+  const [selectionLocked, setSelectionLocked] = useState<boolean>(true);
+  const selectionLockedRef = useRef<boolean>(true);
+  selectionLockedRef.current = selectionLocked;
 
   // Dirty flags so we NEVER recompute 624 materials or React 2D labels 60 times/sec when idle
   const materialsDirtyRef = useRef<boolean>(true);
@@ -206,8 +211,7 @@ export const AnatomyViewport3D: React.FC<Props> = ({
     animating: false,
   });
 
-  // Trigger camera choreography when selectedNodeId or activeStepIndex changes
-  useEffect(() => {
+  const focusCameraOnActiveTarget = useCallback(() => {
     const activeStepNode =
       activeStepIndex !== null
         ? diagnosticReport.prescriptionSteps[activeStepIndex]?.node
@@ -250,6 +254,11 @@ export const AnatomyViewport3D: React.FC<Props> = ({
         animating: true,
       };
     }
+  }, [selectedNodeId, activeStepIndex, diagnosticReport, cameraPreset]);
+
+  // Trigger camera choreography when selectedNodeId or activeStepIndex changes
+  useEffect(() => {
+    focusCameraOnActiveTarget();
   }, [selectedNodeId, activeStepIndex]);
 
   useEffect(() => {
@@ -344,15 +353,22 @@ export const AnatomyViewport3D: React.FC<Props> = ({
     controls.update();
 
     let isOrbitDragging = false;
+    let didOrbitMove = false;
     const onControlStart = () => {
       isOrbitDragging = true;
       cameraTargetGoalRef.current.animating = false;
+    };
+    const onControlChange = () => {
+      if (isOrbitDragging) {
+        didOrbitMove = true;
+      }
     };
     const onControlEnd = () => {
       isOrbitDragging = false;
       labelsDirtyRef.current = true;
     };
     controls.addEventListener('start', onControlStart);
+    controls.addEventListener('change', onControlChange);
     controls.addEventListener('end', onControlEnd);
 
     // 2. Direct Three-Point Studio Lighting (Removed heavy PMREM RoomEnvironment reflection probe)
@@ -813,16 +829,28 @@ export const AnatomyViewport3D: React.FC<Props> = ({
       activeTouchIds.add(e.pointerId);
       if (activeTouchIds.size > 1) {
         wasMultiTouch = true;
+        didOrbitMove = true;
       } else {
         wasMultiTouch = false;
+        didOrbitMove = false;
         pointerDownPos = { x: e.clientX, y: e.clientY };
       }
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      // Skip hover raycast on touch devices or while dragging OrbitControls
-      if (e.pointerType === 'touch' || isOrbitDragging || activeTouchIds.size > 0)
+      // Skip hover raycast on touch devices, while dragging OrbitControls, or when locked
+      if (
+        selectionLockedRef.current ||
+        e.pointerType === 'touch' ||
+        isOrbitDragging ||
+        activeTouchIds.size > 0
+      ) {
+        if (selectionLockedRef.current && renderer.domElement.style.cursor !== 'grab') {
+          renderer.domElement.style.cursor = 'grab';
+          setHoveredInfo((prev) => (prev === null ? null : null));
+        }
         return;
+      }
       const now = performance.now();
       if (now - lastHoverRaycastTime < 55) return; // Throttle hover raycast to max 18fps
       lastHoverRaycastTime = now;
@@ -847,7 +875,7 @@ export const AnatomyViewport3D: React.FC<Props> = ({
           hit.mappedNodeIds.length > 0
             ? STECCO_NODES_BY_ID[hit.mappedNodeIds[0]]
             : undefined;
-        renderer.domElement.style.cursor = mappedNode ? 'pointer' : 'crosshair';
+        renderer.domElement.style.cursor = mappedNode ? 'pointer' : 'grab';
         setHoveredInfo({
           partName: hit.partName,
           mappedNode,
@@ -862,31 +890,27 @@ export const AnatomyViewport3D: React.FC<Props> = ({
         return;
       }
 
+      // If locked (rotation-only guard) or user rotated/zoomed during this gesture, never switch target
+      if (selectionLockedRef.current || didOrbitMove) {
+        didOrbitMove = false;
+        return;
+      }
+
       const moveDist = Math.hypot(
         e.clientX - pointerDownPos.x,
         e.clientY - pointerDownPos.y
       );
-      const maxTapTolerance = e.pointerType === 'touch' ? 14 : 6;
+      const maxTapTolerance = e.pointerType === 'touch' ? 6 : 4;
       if (moveDist > maxTapTolerance) return;
 
-      const hit = getIntersects(e.clientX, e.clientY, true);
+      // Only select explicit Stecco beacons or mapped Stecco muscles (no accidental background-bone jumps)
+      const hit = getIntersects(e.clientX, e.clientY, false);
       if (!hit) return;
 
       if (hit.type === 'node') {
         onSelectRef.current(hit.nodeId);
       } else if (hit.mappedNodeIds.length > 0) {
         onSelectRef.current(hit.mappedNodeIds[0], hit.partName);
-      } else {
-        let nearestId = 'RE-TH';
-        let bestDist = Infinity;
-        for (const node of STECCO_NODES) {
-          const d = hit.hitPoint.distanceTo(new THREE.Vector3(...node.coords));
-          if (d < bestDist) {
-            bestDist = d;
-            nearestId = node.id;
-          }
-        }
-        onSelectRef.current(nearestId, hit.partName);
       }
     };
 
@@ -1616,6 +1640,7 @@ export const AnatomyViewport3D: React.FC<Props> = ({
       window.removeEventListener('resize', handleResize);
       resizeObserver.disconnect();
       controls.removeEventListener('start', onControlStart);
+      controls.removeEventListener('change', onControlChange);
       controls.removeEventListener('end', onControlEnd);
       controls.dispose();
       renderer.dispose();
@@ -1675,6 +1700,7 @@ export const AnatomyViewport3D: React.FC<Props> = ({
                 key={lbl.id}
                 type="button"
                 onClick={() => {
+                  if (selectionLocked) return;
                   if (lbl.stepIndex !== null && onSelectStepIndex) {
                     onSelectStepIndex(lbl.stepIndex - 1);
                   } else {
@@ -1684,7 +1710,9 @@ export const AnatomyViewport3D: React.FC<Props> = ({
                 style={{
                   transform: `translate3d(${Math.round(lbl.labelX)}px, ${Math.round(lbl.labelY)}px, 0) translate(-50%, -50%)`,
                 }}
-                className={`pointer-events-auto absolute left-0 top-0 flex items-center gap-1.5 rounded-full font-extrabold text-white transition-all duration-150 hover:scale-105 backdrop-blur-md border ${
+                className={`${
+                  selectionLocked ? 'pointer-events-none' : 'pointer-events-auto hover:scale-105'
+                } absolute left-0 top-0 flex items-center gap-1.5 rounded-full font-extrabold text-white transition-all duration-150 backdrop-blur-md border ${
                   zoomLodTier === 'L3_MICRO' &&
                   !lbl.isActiveStep &&
                   !lbl.isSelected
@@ -1775,6 +1803,41 @@ export const AnatomyViewport3D: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* Lightweight Icon-Only Floating 3D Controls: Lock/Unlock Picking + Refocus Target */}
+      <div className="pointer-events-auto absolute left-3 top-[106px] z-30 flex items-center gap-1 rounded-xl border border-white/15 bg-[#0D1322]/90 p-1 shadow-xl backdrop-blur-md">
+        <button
+          type="button"
+          onClick={() => setSelectionLocked((v) => !v)}
+          title={
+            selectionLocked
+              ? '已锁定点位防误触（仅可旋转/缩放，点击解锁以点选 3D 肌肉）'
+              : '点选模式已开启（可点击 3D 点位，点击重新锁定防误触）'
+          }
+          aria-label={selectionLocked ? '解锁3D选点' : '锁定3D防误触'}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all active:scale-95 ${
+            selectionLocked
+              ? 'bg-amber-500/20 border-amber-400/70 text-amber-300 hover:bg-amber-500/30'
+              : 'bg-cyan-500/25 border-cyan-400/80 text-cyan-200 hover:bg-cyan-500/35'
+          }`}
+        >
+          {selectionLocked ? (
+            <Lock className="h-4 w-4" />
+          ) : (
+            <Unlock className="h-4 w-4" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={focusCameraOnActiveTarget}
+          title="回到当前靶点正面视角"
+          aria-label="回到当前靶点正面视角"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-[#161F30] text-cyan-300 hover:border-cyan-400/70 hover:bg-[#1E293B] hover:text-white transition-all active:scale-95"
+        >
+          <LocateFixed className="h-4 w-4" />
+        </button>
+      </div>
 
       {/* Unified Bottom-Left HUD Stack (Hover Inspector + Color Legend, never overlaps Right Dock) */}
       <div
