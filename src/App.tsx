@@ -15,6 +15,8 @@ import {
   Hand,
   HelpCircle,
   Layers,
+  LocateFixed,
+  Lock,
   MapPin,
   Pause,
   Play,
@@ -23,6 +25,7 @@ import {
   Sparkles,
   SunDim,
   Tablet,
+  Unlock,
   Wrench,
   X,
 } from 'lucide-react';
@@ -410,6 +413,8 @@ export default function App() {
   const [cameraPreset, setCameraPreset] =
     useState<CameraPreset>('scapula_closeup');
   const [cameraTrigger, setCameraTrigger] = useState<number>(0);
+  const [selectionLocked, setSelectionLocked] = useState<boolean>(true);
+  const [refocusTrigger, setRefocusTrigger] = useState<number>(0);
 
   // Solve live biomechanical tension field & root-cause diagnostic report
   const fieldState = useMemo(
@@ -599,6 +604,8 @@ export default function App() {
         layerVisibility={layerVisibility}
         cameraPreset={cameraPreset}
         cameraTrigger={cameraTrigger}
+        selectionLocked={selectionLocked}
+        refocusTrigger={refocusTrigger}
         releasedNodeIds={releasedNodeIds}
         onSelectNode={handleSelectNode}
         onSelectStepIndex={handleSelectStepIndex}
@@ -609,6 +616,8 @@ export default function App() {
         onSetLayerVisibility={setLayerVisibility}
         onSetCameraPreset={setCameraPreset}
         onTriggerCamera={() => setCameraTrigger((t) => t + 1)}
+        onToggleSelectionLock={() => setSelectionLocked((v) => !v)}
+        onRefocusCamera={() => setRefocusTrigger((t) => t + 1)}
         onSimulateFullRelease={handleSimulateFullUpstreamRelease}
         onSimulateNaiveBackRub={handleSimulateNaiveBackRub}
         onResetScenario={() => handleSelectScenario(activeScenarioId)}
@@ -1106,20 +1115,22 @@ export default function App() {
               </div>
             </div>
 
-            {/* Row 2: Camera View Presets & Counterfactual Proof Buttons */}
+            {/* Row 2: Camera View Presets & Counterfactual Proof + Lock/Refocus Buttons */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-white/15 bg-[#0D1322]/90 p-1 shadow-xl backdrop-blur-md">
-                <span className="px-1.5 text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                <span
+                  title="视角预设"
+                  className="px-1 text-[11px] font-bold text-slate-300 flex items-center"
+                >
                   <Compass className="h-3.5 w-3.5 text-cyan-400" />
-                  视角:
                 </span>
                 {(
                   [
-                    ['scapula_closeup', '肩胛特写'],
-                    ['arm_thorax_loop', '手-肩-背'],
-                    ['posterior_thorax', '后背胸椎'],
+                    ['scapula_closeup', '肩胛'],
+                    ['arm_thorax_loop', '闭环'],
+                    ['posterior_thorax', '胸椎'],
                     ['anterior_chest', '前胸'],
-                    ['right_arm_closeup', '右手臂'],
+                    ['right_arm_closeup', '右臂'],
                     ['pelvis_lumbar', '腰胯'],
                     ['full_body', '全身'],
                   ] as const
@@ -1148,7 +1159,7 @@ export default function App() {
                 ))}
               </div>
 
-              <div className="pointer-events-auto flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#0D1322]/90 p-1 shadow-xl backdrop-blur-md">
+              <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/15 bg-[#0D1322]/90 p-1 shadow-xl backdrop-blur-md">
                 <button
                   type="button"
                   onClick={handleSimulateFullUpstreamRelease}
@@ -1163,7 +1174,38 @@ export default function App() {
                   className="flex items-center gap-1 rounded-lg bg-rose-600/30 border border-rose-400/60 px-2 py-0.5 text-[11px] font-bold text-rose-200 hover:bg-rose-600/45 transition-all"
                 >
                   <HelpCircle className="h-3 w-3 text-rose-300" />
-                  <span>只揉痛点对比</span>
+                  <span>痛点对比</span>
+                </button>
+                <div className="mx-0.5 h-4 w-px bg-white/15" />
+                <button
+                  type="button"
+                  onClick={() => setSelectionLocked((v) => !v)}
+                  title={
+                    selectionLocked
+                      ? '锁定选点（拖转不误触点位，点击切换）'
+                      : '自由选点（点击切换为锁定防误触）'
+                  }
+                  aria-label={selectionLocked ? '锁定选点' : '解锁选点'}
+                  className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all ${
+                    selectionLocked
+                      ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 hover:bg-amber-500/30'
+                      : 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200 hover:bg-emerald-500/30'
+                  }`}
+                >
+                  {selectionLocked ? (
+                    <Lock className="h-3 w-3" />
+                  ) : (
+                    <Unlock className="h-3 w-3" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefocusTrigger((t) => t + 1)}
+                  title="回正视角：镜头一键飞回当前目标点位"
+                  aria-label="回正视角"
+                  className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-400/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/30 transition-all"
+                >
+                  <LocateFixed className="h-3 w-3" />
                 </button>
               </div>
             </div>
@@ -1180,6 +1222,8 @@ export default function App() {
             layerVisibility={layerVisibility}
             cameraPreset={cameraPreset}
             cameraTrigger={cameraTrigger}
+            selectionLocked={selectionLocked}
+            refocusTrigger={refocusTrigger}
             onSelectNode={handleSelectNode}
             onSelectStepIndex={handleSelectStepIndex}
           />

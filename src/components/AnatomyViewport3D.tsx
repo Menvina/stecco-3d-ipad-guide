@@ -99,6 +99,8 @@ interface Props {
   cameraPreset: CameraPreset;
   cameraTrigger: number;
   hasRightFloatingDock?: boolean;
+  selectionLocked?: boolean;
+  refocusTrigger?: number;
   onSelectNode: (nodeId: string, clickedMuscleName?: string) => void;
   onSelectStepIndex?: (stepIdx: number) => void;
 }
@@ -133,6 +135,8 @@ export const AnatomyViewport3D: React.FC<Props> = ({
   cameraPreset,
   cameraTrigger,
   hasRightFloatingDock = false,
+  selectionLocked: selectionLockedProp,
+  refocusTrigger = 0,
   onSelectNode,
   onSelectStepIndex,
 }) => {
@@ -152,7 +156,12 @@ export const AnatomyViewport3D: React.FC<Props> = ({
     'L1_MACRO'
   );
   // Default true: lock 3D canvas against accidental node taps while rotating
-  const [selectionLocked, setSelectionLocked] = useState<boolean>(true);
+  const [internalSelectionLocked, setInternalSelectionLocked] =
+    useState<boolean>(true);
+  const isControlledLock = selectionLockedProp !== undefined;
+  const selectionLocked = isControlledLock
+    ? selectionLockedProp
+    : internalSelectionLocked;
   const selectionLockedRef = useRef<boolean>(true);
   selectionLockedRef.current = selectionLocked;
 
@@ -260,6 +269,13 @@ export const AnatomyViewport3D: React.FC<Props> = ({
   useEffect(() => {
     focusCameraOnActiveTarget();
   }, [selectedNodeId, activeStepIndex]);
+
+  // Refocus active target camera when parent triggers refocus icon button
+  useEffect(() => {
+    if (refocusTrigger > 0) {
+      focusCameraOnActiveTarget();
+    }
+  }, [refocusTrigger]);
 
   useEffect(() => {
     if (loopFocusFilter === 'outgoing_front') {
@@ -1804,40 +1820,42 @@ export const AnatomyViewport3D: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Lightweight Icon-Only Floating 3D Controls: Lock/Unlock Picking + Refocus Target */}
-      <div className="pointer-events-auto absolute left-3 top-[106px] z-30 flex items-center gap-1 rounded-xl border border-white/15 bg-[#0D1322]/90 p-1 shadow-xl backdrop-blur-md">
-        <button
-          type="button"
-          onClick={() => setSelectionLocked((v) => !v)}
-          title={
-            selectionLocked
-              ? '已锁定点位防误触（仅可旋转/缩放，点击解锁以点选 3D 肌肉）'
-              : '点选模式已开启（可点击 3D 点位，点击重新锁定防误触）'
-          }
-          aria-label={selectionLocked ? '解锁3D选点' : '锁定3D防误触'}
-          className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all active:scale-95 ${
-            selectionLocked
-              ? 'bg-amber-500/20 border-amber-400/70 text-amber-300 hover:bg-amber-500/30'
-              : 'bg-cyan-500/25 border-cyan-400/80 text-cyan-200 hover:bg-cyan-500/35'
-          }`}
-        >
-          {selectionLocked ? (
-            <Lock className="h-4 w-4" />
-          ) : (
-            <Unlock className="h-4 w-4" />
-          )}
-        </button>
+      {/* Lightweight Icon-Only Floating 3D Controls (only rendered when not hosted in parent toolbar) */}
+      {!isControlledLock && (
+        <div className="pointer-events-auto absolute left-3 top-[106px] z-30 flex items-center gap-1 rounded-xl border border-white/15 bg-[#0D1322]/90 p-1 shadow-xl backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setInternalSelectionLocked((v) => !v)}
+            title={
+              selectionLocked
+                ? '已锁定点位防误触（仅可旋转/缩放，点击解锁以点选 3D 肌肉）'
+                : '点选模式已开启（可点击 3D 点位，点击重新锁定防误触）'
+            }
+            aria-label={selectionLocked ? '解锁3D选点' : '锁定3D防误触'}
+            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all active:scale-95 ${
+              selectionLocked
+                ? 'bg-amber-500/20 border-amber-400/70 text-amber-300 hover:bg-amber-500/30'
+                : 'bg-cyan-500/25 border-cyan-400/80 text-cyan-200 hover:bg-cyan-500/35'
+            }`}
+          >
+            {selectionLocked ? (
+              <Lock className="h-4 w-4" />
+            ) : (
+              <Unlock className="h-4 w-4" />
+            )}
+          </button>
 
-        <button
-          type="button"
-          onClick={focusCameraOnActiveTarget}
-          title="回到当前靶点正面视角"
-          aria-label="回到当前靶点正面视角"
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-[#161F30] text-cyan-300 hover:border-cyan-400/70 hover:bg-[#1E293B] hover:text-white transition-all active:scale-95"
-        >
-          <LocateFixed className="h-4 w-4" />
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={focusCameraOnActiveTarget}
+            title="回到当前靶点正面视角"
+            aria-label="回到当前靶点正面视角"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-[#161F30] text-cyan-300 hover:border-cyan-400/70 hover:bg-[#1E293B] hover:text-white transition-all active:scale-95"
+          >
+            <LocateFixed className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Unified Bottom-Left HUD Stack (Hover Inspector + Color Legend, never overlaps Right Dock) */}
       <div

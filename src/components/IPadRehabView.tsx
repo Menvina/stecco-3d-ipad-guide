@@ -11,6 +11,8 @@ import {
   Eye,
   HelpCircle,
   Layers,
+  LocateFixed,
+  Lock,
   MapPin,
   Maximize2,
   Minimize2,
@@ -23,6 +25,7 @@ import {
   Sparkles,
   SunDim,
   Tablet,
+  Unlock,
   Wrench,
   X,
 } from 'lucide-react';
@@ -52,6 +55,8 @@ interface IPadRehabViewProps {
   cameraPreset: CameraPreset;
   cameraTrigger: number;
   releasedNodeIds: Set<string>;
+  selectionLocked: boolean;
+  refocusTrigger: number;
   onSelectNode: (nodeId: string, clickedMuscleName?: string) => void;
   onSelectStepIndex: (stepIdx: number | null) => void;
   onSelectSymptomCard: (entry: PainSymptomEntry) => void;
@@ -61,6 +66,8 @@ interface IPadRehabViewProps {
   onSetLayerVisibility: React.Dispatch<React.SetStateAction<LayerVisibilityState>>;
   onSetCameraPreset: (preset: CameraPreset) => void;
   onTriggerCamera: () => void;
+  onToggleSelectionLock: () => void;
+  onRefocusCamera: () => void;
   onSimulateFullRelease: () => void;
   onSimulateNaiveBackRub: () => void;
   onResetScenario: () => void;
@@ -88,6 +95,8 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
   cameraPreset,
   cameraTrigger,
   releasedNodeIds,
+  selectionLocked,
+  refocusTrigger,
   onSelectNode,
   onSelectStepIndex,
   onSelectSymptomCard,
@@ -97,6 +106,8 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
   onSetLayerVisibility,
   onSetCameraPreset,
   onTriggerCamera,
+  onToggleSelectionLock,
+  onRefocusCamera,
   onSimulateFullRelease,
   onSimulateNaiveBackRub,
   onResetScenario,
@@ -230,6 +241,8 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
             cameraPreset={cameraPreset}
             cameraTrigger={cameraTrigger}
             hasRightFloatingDock={!isPortraitSim}
+            selectionLocked={selectionLocked}
+            refocusTrigger={refocusTrigger}
             onSelectNode={onSelectNode}
             onSelectStepIndex={onSelectStepIndex}
           />
@@ -304,21 +317,23 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
               </div>
             </div>
 
-            {/* Row 2: Camera Angles + Spotlight/X-Ray/Speed Utility Bar on a Single Compact Line */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Row 2: Compact 2-Char Region Views (Left) + Unified Function Bar w/ Lock/Refocus/Reset Icons (Right) */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="pointer-events-auto inline-flex flex-wrap items-center gap-1 rounded-2xl border border-white/20 bg-[#0D1322]/95 p-1 shadow-xl backdrop-blur-md">
-                <span className="px-2 text-[11px] font-extrabold text-white flex items-center gap-1">
-                  <Compass className="h-3.5 w-3.5 text-cyan-400" />
-                  视角:
+                <span
+                  className="px-1.5 text-cyan-400 flex items-center"
+                  title="视角切换"
+                >
+                  <Compass className="h-3.5 w-3.5" />
                 </span>
                 {(
                   [
-                    ['scapula_closeup', '肩胛特写'],
-                    ['arm_thorax_loop', '闭环全景'],
-                    ['posterior_thorax', '后背胸椎'],
-                    ['anterior_chest', '前胸胸小肌'],
-                    ['right_arm_closeup', '右前臂手腕'],
-                    ['pelvis_lumbar', '骨盆底座'],
+                    ['scapula_closeup', '肩胛'],
+                    ['arm_thorax_loop', '闭环'],
+                    ['posterior_thorax', '胸椎'],
+                    ['anterior_chest', '前胸'],
+                    ['right_arm_closeup', '右臂'],
+                    ['pelvis_lumbar', '腰胯'],
                   ] as const
                 ).map(([presetId, label]) => (
                   <button
@@ -337,7 +352,7 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
                         onTriggerCamera();
                       }
                     }}
-                    className={`rounded-xl px-2 py-1 text-xs font-extrabold transition-all active:scale-95 border ${
+                    className={`rounded-xl px-2.5 py-1 text-xs font-extrabold transition-all active:scale-95 border ${
                       cameraPreset === presetId
                         ? 'bg-sky-600 border-white text-white shadow-[0_0_10px_rgba(14,165,233,0.45)]'
                         : 'bg-transparent border-transparent text-white/90 hover:bg-[#161F30] hover:text-white'
@@ -348,8 +363,8 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
                 ))}
               </div>
 
-              {/* Compact Utility Pill right alongside Camera Angles on Row 2 */}
-              <div className="pointer-events-auto inline-flex items-center gap-1 rounded-2xl border border-white/20 bg-[#0D1322]/95 p-1 shadow-2xl backdrop-blur-md">
+              {/* Unified Function Bar (<=4 chars text labels + Icon-only Lock / Refocus / Reset) */}
+              <div className="pointer-events-auto inline-flex flex-wrap items-center gap-1 rounded-2xl border border-white/20 bg-[#0D1322]/95 p-1 shadow-2xl backdrop-blur-md">
                 <button
                   type="button"
                   onClick={() =>
@@ -383,7 +398,7 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
                   }`}
                 >
                   <Layers className="h-3.5 w-3.5 text-cyan-300" />
-                  <span>深层透视</span>
+                  <span>透视</span>
                 </button>
 
                 <button
@@ -402,7 +417,7 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
                   title="默认仅显示当前按压步骤及其传导链标签；点击可展开全部节点标签"
                 >
                   <Eye className="h-3.5 w-3.5 text-cyan-300" />
-                  <span>{layerVisibility.showAllLabels ? '全部标签' : '当前链标签'}</span>
+                  <span>{layerVisibility.showAllLabels ? '全标签' : '链标签'}</span>
                 </button>
 
                 <button
@@ -424,11 +439,47 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
                   </span>
                 </button>
 
+                <div className="mx-0.5 h-4 w-px bg-white/15" />
+
+                {/* Icon-Only Quick Controls: Lock/Unlock + Refocus + Reset */}
+                <button
+                  type="button"
+                  onClick={onToggleSelectionLock}
+                  title={
+                    selectionLocked
+                      ? '防误触锁定中（仅可旋转/缩放，点击解锁选点）'
+                      : '选点模式已开（可点击 3D 点位，点击重新锁定）'
+                  }
+                  aria-label={selectionLocked ? '解锁3D选点' : '锁定3D防误触'}
+                  className={`flex h-7 w-7 items-center justify-center rounded-xl border transition-all active:scale-95 ${
+                    selectionLocked
+                      ? 'bg-amber-500/20 border-amber-400/75 text-amber-300 hover:bg-amber-500/30'
+                      : 'bg-cyan-500/25 border-cyan-400/80 text-cyan-200 hover:bg-cyan-500/35'
+                  }`}
+                >
+                  {selectionLocked ? (
+                    <Lock className="h-3.5 w-3.5" />
+                  ) : (
+                    <Unlock className="h-3.5 w-3.5" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onRefocusCamera}
+                  title="回到当前靶点正面视角"
+                  aria-label="回到当前靶点正面视角"
+                  className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/15 bg-[#161F30] text-cyan-300 hover:border-cyan-400/70 hover:bg-[#1E293B] hover:text-white transition-all active:scale-95"
+                >
+                  <LocateFixed className="h-3.5 w-3.5" />
+                </button>
+
                 <button
                   type="button"
                   onClick={onResetScenario}
-                  className="rounded-xl border border-white/15 bg-[#161F30] p-1 text-white hover:bg-[#1E293B]"
+                  className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/15 bg-[#161F30] text-white hover:bg-[#1E293B] active:scale-95"
                   title="重置状态"
+                  aria-label="重置状态"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </button>
@@ -442,7 +493,7 @@ export const IPadRehabView: React.FC<IPadRehabViewProps> = ({
                         className="rounded-xl border border-white/20 bg-[#161F30] px-2 py-1 text-xs font-bold text-white hover:bg-[#1E293B]"
                         title="显示 iPad 外框模拟器"
                       >
-                        iPad外框
+                        外框
                       </button>
                     )}
                     <button
